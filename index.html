@@ -1013,7 +1013,7 @@
       const CONFIG = {
         API_ENDPOINT:
           "https://ripening-footman-strategic.ngrok-free.dev/predict", // ← update this
-        IMAGE_QUALITY: 0.96,
+        IMAGE_QUALITY: 0.75,
         IMAGE_FORMAT: "image/jpeg",
         BOOK_ID: null, // optional: set a static book_id or leave null
       };
@@ -1094,8 +1094,8 @@
         const constraints = {
           video: {
             facingMode: { ideal: facing },
-            width: { ideal: 9999 },
-            height: { ideal: 9999 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
             frameRate: { ideal: 30 },
           },
           audio: false,
