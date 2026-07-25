@@ -1318,7 +1318,12 @@
             try {
     
                 const response = await fetch(
-                    `${CONFIG.BASE_URL}/status/${jobId}`
+                    `${CONFIG.BASE_URL}/status/${jobId}`,
+                    {
+                        headers: {
+                            "ngrok-skip-browser-warning": "true",
+                        },
+                    }
                 );
     
                 if (!response.ok) {
@@ -1403,6 +1408,7 @@ uploadBar.style.width = "0%";
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                "ngrok-skip-browser-warning": "true",
             },
             body: JSON.stringify(payload),
         });
