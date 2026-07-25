@@ -202,6 +202,50 @@
         animation: scan 3s ease-in-out infinite;
       }
 
+      /* Zoom Slider Overlay */
+      #zoom-wrap {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(10, 10, 11, 0.75);
+        padding: 10px 16px;
+        border-radius: 999px;
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--border);
+        z-index: 5;
+        transition: opacity 0.3s;
+      }
+      #zoom-wrap.hidden {
+        display: none;
+        opacity: 0;
+        pointer-events: none;
+      }
+      #zoom-icon {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      #zoom-slider {
+        -webkit-appearance: none;
+        width: 140px;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 2px;
+        outline: none;
+      }
+      #zoom-slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--accent);
+        cursor: pointer;
+        box-shadow: 0 0 6px rgba(232, 255, 71, 0.4);
+      }
+
       /* Permission / error overlay */
       #overlay {
         position: absolute;
@@ -308,7 +352,8 @@
         transform: none;
       }
 
-      #btn-flip {
+      /* Common styles for secondary control buttons (flip & flash) */
+      .btn-secondary {
         width: 48px;
         height: 48px;
         border-radius: 50%;
@@ -323,19 +368,26 @@
         transition:
           border-color 0.2s,
           background 0.2s,
+          color 0.2s,
           transform 0.3s;
       }
-      #btn-flip:active {
-        transform: rotateY(180deg);
+      .btn-secondary:active {
+        transform: scale(0.92);
       }
-      #btn-flip:disabled {
+      .btn-secondary:disabled {
         opacity: 0.25;
         cursor: not-allowed;
       }
+      
+      #btn-flip:active {
+        transform: rotateY(180deg);
+      }
 
-      .ctrl-spacer {
-        width: 48px;
-        height: 48px;
+      #btn-flash.active {
+        background: var(--accent);
+        color: var(--bg);
+        border-color: var(--accent);
+        box-shadow: 0 0 15px rgba(232, 255, 71, 0.3);
       }
 
       /* ── Shared button styles ────────────────────────────────── */
@@ -902,6 +954,12 @@
         <div class="corner br"></div>
         <div class="scanline"></div>
         <div id="flash"></div>
+        
+        <!-- Zoom Slider -->
+        <div id="zoom-wrap" class="hidden">
+          <span id="zoom-icon">🔍</span>
+          <input type="range" id="zoom-slider" min="1" max="1" step="0.1" value="1">
+        </div>
 
         <div id="overlay">
           <div class="ov-icon">📷</div>
@@ -921,9 +979,9 @@
 
       <!-- Shutter controls -->
       <div id="controls">
-        <div class="ctrl-spacer"></div>
+        <button id="btn-flash" class="btn-secondary" title="Toggle flashlight" disabled>⚡</button>
         <button id="btn-capture" title="Capture photo" disabled></button>
-        <button id="btn-flip" title="Flip camera" disabled>⟳</button>
+        <button id="btn-flip" class="btn-secondary" title="Flip camera" disabled>⟳</button>
       </div>
     </div>
 
@@ -1027,6 +1085,9 @@
       const btnStart = document.getElementById("btn-start");
       const btnCapture = document.getElementById("btn-capture");
       const btnFlip = document.getElementById("btn-flip");
+      const btnFlash = document.getElementById("btn-flash");
+      const zoomWrap = document.getElementById("zoom-wrap");
+      const zoomSlider = document.getElementById("zoom-slider");
       const resBadge = document.getElementById("res-badge");
       const statusBar = document.getElementById("status-bar");
       const statusText = document.getElementById("status-text");
@@ -1058,6 +1119,7 @@
 
       /* ── State ────────────────────────────────────────────────── */
       let stream = null;
+      let videoTrack = null;
       let imageCapture = null;
       let capturedBlob = null;
       let capturedBase64 = null; // RAW base64 string — NO data: prefix (what backend expects)
@@ -1066,6 +1128,7 @@
       let isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
       let streamWidth = 0;
       let streamHeight = 0;
+      let isTorchOn = false;
 
       /* ─────────────────────────────────────────────────────────── 
      HELPERS
@@ -1107,13 +1170,13 @@
           video.srcObject = stream;
           await video.play();
 
-          const track = stream.getVideoTracks()[0];
+          videoTrack = stream.getVideoTracks()[0];
           imageCapture =
             typeof ImageCapture !== "undefined"
-              ? new ImageCapture(track)
+              ? new ImageCapture(videoTrack)
               : null;
 
-          const settings = track.getSettings();
+          const settings = videoTrack.getSettings();
           streamWidth = settings.width || video.videoWidth;
           streamHeight = settings.height || video.videoHeight;
 
@@ -1126,6 +1189,34 @@
             },
             { once: true },
           );
+          
+          // Delay to ensure track capabilities are populated by the browser
+          setTimeout(() => {
+            if (videoTrack) {
+               const capabilities = videoTrack.getCapabilities();
+               
+               // Initialize Flashlight Support
+               if (capabilities.torch) {
+                 btnFlash.disabled = false;
+                 isTorchOn = false;
+                 btnFlash.classList.remove("active");
+               } else {
+                 btnFlash.disabled = true;
+                 zoomWrap.classList.add("hidden");
+               }
+
+               // Initialize Zoom Support
+               if (capabilities.zoom) {
+                 zoomSlider.min = capabilities.zoom.min;
+                 zoomSlider.max = capabilities.zoom.max;
+                 zoomSlider.step = capabilities.zoom.step;
+                 zoomSlider.value = settings.zoom || capabilities.zoom.min;
+                 zoomWrap.classList.remove("hidden");
+               } else {
+                 zoomWrap.classList.add("hidden");
+               }
+            }
+          }, 500);
 
           updateResDisplay();
           overlay.classList.add("hidden");
@@ -1146,6 +1237,8 @@
 
           btnCapture.disabled = true;
           btnFlip.disabled = true;
+          btnFlash.disabled = true;
+          zoomWrap.classList.add("hidden");
 
           resBadge.textContent = "ERROR";
           resBadge.classList.remove("live");
@@ -1165,6 +1258,11 @@
         if (stream) {
           stream.getTracks().forEach((t) => t.stop());
           stream = null;
+          videoTrack = null;
+          isTorchOn = false;
+          btnFlash.classList.remove("active");
+          btnFlash.disabled = true;
+          zoomWrap.classList.add("hidden");
         }
       }
 
@@ -1623,6 +1721,33 @@ uploadBar.style.width = "0%";
         setStatus("Switching camera…");
         await startCamera(facingMode);
       }
+
+      /* ── Toggle Torch (Flashlight) ────────────────────────────── */
+      btnFlash.addEventListener("click", async () => {
+        if (!videoTrack) return;
+        isTorchOn = !isTorchOn;
+        try {
+          await videoTrack.applyConstraints({
+            advanced: [{ torch: isTorchOn }]
+          });
+          btnFlash.classList.toggle("active", isTorchOn);
+        } catch (err) {
+          console.error("Failed to toggle torch", err);
+          isTorchOn = !isTorchOn; // Revert state on failure
+        }
+      });
+      
+      /* ── Zoom Slider Logic ────────────────────────────────────── */
+      zoomSlider.addEventListener("input", async (e) => {
+        if (!videoTrack) return;
+        try {
+          await videoTrack.applyConstraints({
+            advanced: [{ zoom: parseFloat(e.target.value) }]
+          });
+        } catch (err) {
+          console.error("Failed to apply zoom", err);
+        }
+      });
 
       /* ── Keyboard shortcuts ───────────────────────────────────── */
       document.addEventListener("keydown", (e) => {
