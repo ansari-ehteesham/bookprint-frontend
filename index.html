@@ -1011,6 +1011,7 @@
      CONFIG
   ═══════════════════════════════════════════════════════════ */
       const CONFIG = {
+        BASE_URL: "https://ripening-footman-strategic.ngrok-free.dev",
         API_ENDPOINT:
           "https://ripening-footman-strategic.ngrok-free.dev/predict", // ← update this
         IMAGE_QUALITY: 0.50,
@@ -1310,57 +1311,135 @@
         return `BP-${hex}`;
       }
 
-      async function sendImage() {
-        if (!capturedBase64) return;
-        setBtnState("loading");
-        setStatus("Analysing…");
-        simulateProgress();
+      async function pollStatus(jobId) {
 
-        // Reset previous results
-        fingerprintCard.classList.remove("show");
-        errorCard.classList.remove("show");
-        detMeta.style.display = "none";
-        resultPlaceholder.style.display = "none";
-
-        /* ── Build payload matching PredictRequest schema ─────────── */
-        const payload = {
-          image: capturedBase64, // raw base64, no data: prefix
-          book_id: CONFIG.BOOK_ID || generateBookId(), // optional
-        };
-
-        try {
-          const response = await fetch(CONFIG.API_ENDPOINT, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-
-          finishProgress();
-
-          if (!response.ok) {
-            let detail = `HTTP ${response.status}`;
+        const interval = setInterval(async () => {
+    
             try {
-              const e = await response.json();
-              detail = e.detail || detail;
-            } catch {}
-            throw new Error(detail);
-          }
+    
+                const response = await fetch(
+                    `${CONFIG.BASE_URL}/status/${jobId}`
+                );
+    
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+    
+                const status = await response.json();
+    
+                uploadBar.style.width = status.progress + "%";
+    
+                if (status.status === "completed") {
+    
+                    clearInterval(interval);
+    
+                    finishProgress();
+    
+                    handleSuccess(status.result);
+    
+                    return;
+                }
+    
+                if (status.status === "failed") {
+    
+                    clearInterval(interval);
+    
+                    finishProgress();
+    
+                    setBtnState("fail");
+    
+                    setStatus("Analysis failed", "error");
+    
+                    showToast(status.error, "error");
+    
+                    showErrorCard(status.error);
+    
+                    return;
+                }
+    
+            } catch (err) {
+    
+                clearInterval(interval);
+    
+                finishProgress();
+    
+                setBtnState("fail");
+    
+                setStatus("Connection lost", "error");
+    
+                showToast(err.message, "error");
+    
+                showErrorCard(err.message);
+    
+            }
+    
+        }, 2000);
+    
+    }
+      async function sendImage() {
 
-          const data = await response.json();
-          const reviewImgWrap = document.getElementById("review-img-wrap");
-          if (reviewImgWrap) {
-            reviewImgWrap.style.display = "none";
-          }
-          handleSuccess(data);
-        } catch (err) {
-          console.error("API error:", err);
-          finishProgress();
-          setBtnState("fail");
-          setStatus("Analysis failed", "error");
-          showToast(`❌ ${err.message}`, "error");
-          showErrorCard(err.message);
+    if (!capturedBase64) return;
+
+    setBtnState("loading");
+
+    setStatus("Uploading image...");
+
+    uploadBarWrap.classList.add("show");
+uploadBar.style.width = "0%";
+
+    fingerprintCard.classList.remove("show");
+    errorCard.classList.remove("show");
+    detMeta.style.display = "none";
+    resultPlaceholder.style.display = "none";
+
+    const payload = {
+        image: capturedBase64,
+        book_id: CONFIG.BOOK_ID || generateBookId(),
+    };
+
+    try {
+
+        const response = await fetch(CONFIG.API_ENDPOINT, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.detail || `HTTP ${response.status}`);
         }
-      }
+
+        const reviewImgWrap = document.getElementById("review-img-wrap");
+
+        if (reviewImgWrap) {
+            reviewImgWrap.style.display = "none";
+        }
+
+        setStatus("Processing image...");
+
+        pollStatus(data.job_id);
+
+    } catch (err) {
+
+        console.error(err);
+
+        finishProgress();
+
+        setBtnState("fail");
+
+        setStatus("Analysis failed", "error");
+
+        showToast(`❌ ${err.message}`, "error");
+
+        showErrorCard(err.message);
+
+    }
+
+}
 
       /* ─────────────────────────────────────────────────────────── 
      HANDLE SUCCESS RESPONSE — PredictResponse
