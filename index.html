@@ -1287,8 +1287,8 @@
           if (imageCapture) {
             try {
               blob = await imageCapture.takePhoto({
-                imageWidth: 9999,
-                imageHeight: 9999,
+                imageWidth: 1600,
+                imageHeight: 1200,
               });
             } catch {
               blob = await canvasCapture();
