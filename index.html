@@ -1,0 +1,1580 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="ngrok-skip-browser-warning" content="true" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>CamCapture · Bookprint</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ── Reset & Variables ───────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0a0a0b;
+        --surface: #131316;
+        --border: #252529;
+        --accent: #e8ff47;
+        --accent2: #47ffe8;
+        --text: #f0f0ee;
+        --muted: #6b6b72;
+        --danger: #ff4757;
+        --success: #2ed573;
+        --radius: 16px;
+        --font-head: "Syne", sans-serif;
+        --font-mono: "DM Mono", monospace;
+      }
+
+      html,
+      body {
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-mono);
+        overflow: hidden;
+      }
+
+      /* ── Noise grain overlay ─────────────────────────────────── */
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+        pointer-events: none;
+        z-index: 9999;
+        opacity: 0.4;
+      }
+
+      /* ── App Shell ───────────────────────────────────────────── */
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100dvh;
+        max-width: 700px;
+        margin: 0 auto;
+        position: relative;
+      }
+
+      /* ── Header ──────────────────────────────────────────────── */
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px 12px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+        animation: slideDown 0.5s ease both;
+      }
+
+      .brand {
+        font-family: var(--font-head);
+        font-size: 1.4rem;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        color: var(--text);
+      }
+      .brand span {
+        color: var(--accent);
+      }
+
+      #res-badge {
+        font-size: 0.68rem;
+        color: var(--muted);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        padding: 4px 10px;
+        border-radius: 999px;
+        transition: all 0.4s;
+        letter-spacing: 0.5px;
+      }
+      #res-badge.live {
+        color: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 0 10px rgba(232, 255, 71, 0.15);
+      }
+
+      /* ── Status bar ──────────────────────────────────────────── */
+      #status-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 20px;
+        font-size: 0.72rem;
+        color: var(--muted);
+        flex-shrink: 0;
+        min-height: 36px;
+        letter-spacing: 0.3px;
+      }
+      #status-bar .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex-shrink: 0;
+        transition: background 0.3s;
+      }
+      #status-bar.active .dot {
+        background: var(--accent);
+        animation: pulse 1.5s infinite;
+      }
+      #status-bar.error .dot {
+        background: var(--danger);
+      }
+      #status-bar.ok .dot {
+        background: var(--success);
+      }
+
+      /* ── Viewfinder ──────────────────────────────────────────── */
+      #viewfinder-wrap {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        background: #000;
+        min-height: 0;
+      }
+
+      #video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        transition: opacity 0.3s;
+      }
+
+      /* Corner brackets */
+      .corner {
+        position: absolute;
+        width: 28px;
+        height: 28px;
+        border-color: var(--accent);
+        border-style: solid;
+        opacity: 0.7;
+        z-index: 2;
+      }
+      .corner.tl {
+        top: 20px;
+        left: 20px;
+        border-width: 2px 0 0 2px;
+      }
+      .corner.tr {
+        top: 20px;
+        right: 20px;
+        border-width: 2px 2px 0 0;
+      }
+      .corner.bl {
+        bottom: 20px;
+        left: 20px;
+        border-width: 0 0 2px 2px;
+      }
+      .corner.br {
+        bottom: 20px;
+        right: 20px;
+        border-width: 0 2px 2px 0;
+      }
+
+      /* Scan line */
+      .scanline {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent2),
+          transparent
+        );
+        opacity: 0;
+        z-index: 2;
+        animation: scan 3s ease-in-out infinite;
+      }
+
+      /* Permission / error overlay */
+      #overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        background: rgba(10, 10, 11, 0.92);
+        z-index: 10;
+        text-align: center;
+        padding: 30px;
+      }
+      #overlay .ov-icon {
+        font-size: 3rem;
+        margin-bottom: 8px;
+      }
+      #overlay .ov-title {
+        font-family: var(--font-head);
+        font-size: 1.3rem;
+        font-weight: 700;
+      }
+      #overlay .ov-sub {
+        font-size: 0.78rem;
+        color: var(--muted);
+        line-height: 1.6;
+        max-width: 300px;
+      }
+      #overlay.hidden {
+        display: none;
+      }
+
+      /* Capture flash */
+      #flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      #canvas {
+        display: none;
+      }
+
+      /* ── Image info chips ────────────────────────────────────── */
+      .chip {
+        font-size: 0.65rem;
+        background: rgba(10, 10, 11, 0.8);
+        border: 1px solid var(--border);
+        padding: 4px 10px;
+        border-radius: 999px;
+        backdrop-filter: blur(8px);
+        letter-spacing: 0.4px;
+      }
+      .chip.hi {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      /* ── Bottom controls (viewfinder) ────────────────────────── */
+      #controls {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        gap: 20px;
+        border-top: 1px solid var(--border);
+        flex-shrink: 0;
+        background: var(--bg);
+      }
+
+      #btn-capture {
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        background: var(--accent);
+        border: none;
+        cursor: pointer;
+        position: relative;
+        flex-shrink: 0;
+        transition:
+          transform 0.15s,
+          box-shadow 0.15s;
+        box-shadow:
+          0 0 0 4px rgba(232, 255, 71, 0.15),
+          0 0 0 8px rgba(232, 255, 71, 0.05);
+      }
+      #btn-capture:active {
+        transform: scale(0.92);
+      }
+      #btn-capture::after {
+        content: "";
+        position: absolute;
+        inset: 8px;
+        border-radius: 50%;
+        border: 2px solid rgba(10, 10, 11, 0.35);
+      }
+      #btn-capture:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      #btn-flip {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text);
+        font-size: 1.2rem;
+        transition:
+          border-color 0.2s,
+          background 0.2s,
+          transform 0.3s;
+      }
+      #btn-flip:active {
+        transform: rotateY(180deg);
+      }
+      #btn-flip:disabled {
+        opacity: 0.25;
+        cursor: not-allowed;
+      }
+
+      .ctrl-spacer {
+        width: 48px;
+        height: 48px;
+      }
+
+      /* ── Shared button styles ────────────────────────────────── */
+      .btn {
+        flex: 1;
+        padding: 14px 20px;
+        border-radius: var(--radius);
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+        cursor: pointer;
+        border: none;
+        transition:
+          opacity 0.2s,
+          transform 0.15s,
+          box-shadow 0.2s;
+      }
+      .btn:active {
+        transform: scale(0.97);
+      }
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .btn-outline {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+      .btn-outline:hover {
+        border-color: var(--muted);
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #0a0a0b;
+        box-shadow: 0 4px 20px rgba(232, 255, 71, 0.2);
+      }
+      .btn-primary:hover {
+        box-shadow: 0 4px 28px rgba(232, 255, 71, 0.35);
+      }
+      .btn-primary.loading {
+        background: var(--muted);
+        color: var(--bg);
+        box-shadow: none;
+        cursor: wait;
+      }
+      .btn-primary.success {
+        background: var(--success);
+        box-shadow: 0 4px 20px rgba(46, 213, 115, 0.3);
+      }
+      .btn-primary.fail {
+        background: var(--danger);
+        box-shadow: 0 4px 20px rgba(255, 71, 87, 0.3);
+      }
+
+      /* ══════════════════════════════════════════════════════════
+       REVIEW SCREEN
+    ══════════════════════════════════════════════════════════ */
+      #review-screen {
+        position: fixed;
+        inset: 0;
+        background: var(--bg);
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(30px);
+        transition:
+          opacity 0.35s ease,
+          transform 0.35s ease;
+        max-width: 700px;
+        margin: 0 auto;
+        overflow: hidden;
+      }
+      #review-screen.open {
+        opacity: 1;
+        pointer-events: all;
+        transform: translateY(0);
+      }
+
+      #review-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+      }
+      #review-header h2 {
+        font-family: var(--font-head);
+        font-size: 1.1rem;
+        font-weight: 700;
+      }
+      #review-meta {
+        font-size: 0.68rem;
+        color: var(--muted);
+        text-align: right;
+        line-height: 1.6;
+      }
+
+      /* Image preview — fixed height, does not scroll */
+      #review-img-wrap {
+        position: relative;
+        flex-shrink: 0;
+        height: 42vh;
+        background: #000;
+        overflow: hidden;
+      }
+      #review-img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      #img-chips {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      /* ── Upload progress bar ─────────────────────────────────── */
+      #upload-bar-wrap {
+        height: 3px;
+        background: var(--border);
+        overflow: hidden;
+        flex-shrink: 0;
+        display: none;
+      }
+      #upload-bar-wrap.show {
+        display: block;
+      }
+      #upload-bar {
+        height: 100%;
+        width: 0;
+        background: linear-gradient(90deg, var(--accent), var(--accent2));
+        transition: width 0.4s ease;
+      }
+
+      /* ── Result panel (scrollable area below image) ──────────── */
+      #result-panel {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+        padding: 0 20px;
+        /* hide scrollbar but allow scroll */
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+      #result-panel::-webkit-scrollbar {
+        width: 4px;
+      }
+      #result-panel::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #result-panel::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+
+      /* placeholder shown before analysis */
+      #result-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 32px 20px;
+        color: var(--muted);
+        font-size: 0.78rem;
+        text-align: center;
+      }
+      #result-placeholder .ph-icon {
+        font-size: 2rem;
+        opacity: 0.4;
+      }
+
+      /* ── Fingerprint card ────────────────────────────────────── */
+      #fingerprint-card {
+        display: none;
+        margin: 20px 0 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        animation: fadeIn 0.4s ease both;
+      }
+      #fingerprint-card.show {
+        display: block;
+      }
+
+      .fp-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .fp-card-label {
+        font-size: 0.65rem;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .fp-card-badge {
+        font-size: 0.62rem;
+        padding: 3px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--success);
+        color: var(--success);
+        letter-spacing: 0.4px;
+      }
+      .fp-card-badge.warn {
+        border-color: #f0a500;
+        color: #f0a500;
+      }
+
+      /* Big fingerprint display */
+      .fp-value-wrap {
+        padding: 20px 18px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .fp-value {
+        font-family: var(--font-head);
+        font-size: clamp(2rem, 8vw, 2.2rem);
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        color: var(--accent);
+        line-height: 1;
+        word-break: break-all;
+      }
+      .fp-sub {
+        font-size: 0.68rem;
+        color: var(--muted);
+        letter-spacing: 0.3px;
+      }
+
+      /* Petal classification grid */
+      .petal-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+        gap: 8px;
+        padding: 0 18px 18px;
+      }
+      .petal-cell {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 6px;
+        text-align: center;
+        transition: border-color 0.2s;
+      }
+      .petal-cell.low-conf {
+        border-color: #f0a500;
+      }
+      .petal-cell .pc-digit {
+        font-family: var(--font-head);
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: var(--accent);
+        line-height: 1;
+      }
+      .petal-cell .pc-color {
+        font-size: 0.6rem;
+        color: var(--muted);
+        margin-top: 4px;
+        text-transform: capitalize;
+        letter-spacing: 0.3px;
+      }
+      .petal-cell .pc-conf {
+        font-size: 0.58rem;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .petal-cell .pc-idx {
+        font-size: 0.55rem;
+        color: var(--border);
+        margin-bottom: 4px;
+        letter-spacing: 0.5px;
+      }
+
+      /* Detection meta info */
+      .det-meta {
+        margin: 12px 0 20px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      .det-meta-item {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .det-meta-item .dmi-label {
+        font-size: 0.58rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--muted);
+        margin-bottom: 4px;
+      }
+      .det-meta-item .dmi-value {
+        font-size: 0.82rem;
+        color: var(--text);
+      }
+      .det-meta-item .dmi-value.accent {
+        color: var(--accent);
+      }
+
+      /* ── Stage05 circle image card ──────────────────────────── */
+      #stage05-card {
+        display: none;
+        margin: 12px 0 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        animation: fadeIn 0.45s ease both;
+      }
+      #stage05-card.show {
+        display: block;
+      }
+
+      .s05-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .s05-label {
+        font-size: 0.65rem;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .s05-tag {
+        font-size: 0.6rem;
+        padding: 3px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--accent2);
+        color: var(--accent2);
+        letter-spacing: 0.4px;
+      }
+
+      /* The image itself — full width, aspect preserved */
+      #stage05-img-wrap {
+        position: relative;
+        width: 100%;
+        background: #000;
+        /* Reserve space while loading */
+        min-height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #stage05-img {
+        width: 100%;
+        height: auto;
+        display: block;
+        object-fit: contain;
+        /* Fade in once src is set */
+        opacity: 0;
+        transition: opacity 0.4s ease;
+      }
+      #stage05-img.loaded {
+        opacity: 1;
+      }
+
+      /* Spinner shown while image decodes */
+      #stage05-spinner {
+        position: absolute;
+        width: 28px;
+        height: 28px;
+        border: 2px solid var(--border);
+        border-top-color: var(--accent2);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      #stage05-spinner.hidden {
+        display: none;
+      }
+
+      .s05-caption {
+        padding: 10px 18px 14px;
+        font-size: 0.65rem;
+        color: var(--muted);
+        letter-spacing: 0.3px;
+        line-height: 1.5;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ── Error card ──────────────────────────────────────────── */
+      #error-card {
+        display: none;
+        margin: 20px 0;
+        background: rgba(255, 71, 87, 0.07);
+        border: 1px solid rgba(255, 71, 87, 0.3);
+        border-radius: var(--radius);
+        padding: 18px;
+        animation: fadeIn 0.3s ease both;
+      }
+      #error-card.show {
+        display: block;
+      }
+      #error-card .ec-title {
+        font-family: var(--font-head);
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: var(--danger);
+        margin-bottom: 6px;
+      }
+      #error-card .ec-msg {
+        font-size: 0.75rem;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      /* ── Review action buttons ───────────────────────────────── */
+      #review-controls {
+        display: flex;
+        gap: 12px;
+        padding: 16px 20px;
+        border-top: 1px solid var(--border);
+        flex-shrink: 0;
+        background: var(--bg);
+      }
+
+      /* ── Toast ───────────────────────────────────────────────── */
+      #toast {
+        position: fixed;
+        bottom: 100px;
+        left: 50%;
+        transform: translateX(-50%) translateY(20px);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        padding: 10px 20px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        white-space: nowrap;
+        opacity: 0;
+        transition:
+          opacity 0.3s,
+          transform 0.3s;
+        z-index: 200;
+        pointer-events: none;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+      #toast.success {
+        border-color: var(--success);
+        color: var(--success);
+      }
+      #toast.error {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      /* ── Keyframes ───────────────────────────────────────────── */
+      @keyframes slideDown {
+        from {
+          opacity: 0;
+          transform: translateY(-12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+      @keyframes scan {
+        0% {
+          top: 15%;
+          opacity: 0;
+        }
+        10% {
+          opacity: 0.6;
+        }
+        90% {
+          opacity: 0.6;
+        }
+        100% {
+          top: 85%;
+          opacity: 0;
+        }
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* ── Responsive ──────────────────────────────────────────── */
+      @media (max-width: 480px) {
+        .brand {
+          font-size: 1.1rem;
+        }
+        #btn-capture {
+          width: 64px;
+          height: 64px;
+        }
+        #controls {
+          padding: 16px;
+        }
+        #review-img-wrap {
+          height: 36vh;
+        }
+        .fp-value {
+          font-size: clamp(1.8rem, 10vw, 2.8rem);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- Header -->
+      <header>
+        <div class="brand">Cam<span>Capture</span></div>
+        <div id="res-badge">INITIALIZING</div>
+      </header>
+
+      <!-- Status bar -->
+      <div id="status-bar">
+        <div class="dot"></div>
+        <span id="status-text">Starting camera…</span>
+      </div>
+
+      <!-- Viewfinder -->
+      <div id="viewfinder-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+        <div class="scanline"></div>
+        <div id="flash"></div>
+
+        <div id="overlay">
+          <div class="ov-icon">📷</div>
+          <div class="ov-title">Camera Access</div>
+          <div class="ov-sub">
+            Grant camera permission to start capturing high-resolution photos.
+          </div>
+          <button
+            class="btn btn-primary"
+            id="btn-start"
+            style="max-width: 220px; flex: none"
+          >
+            Enable Camera
+          </button>
+        </div>
+      </div>
+
+      <!-- Shutter controls -->
+      <div id="controls">
+        <div class="ctrl-spacer"></div>
+        <button id="btn-capture" title="Capture photo" disabled></button>
+        <button id="btn-flip" title="Flip camera" disabled>⟳</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+     REVIEW SCREEN
+════════════════════════════════════════════════════════════ -->
+    <div id="review-screen">
+      <!-- Header -->
+      <div id="review-header">
+        <h2>Review Photo</h2>
+        <div id="review-meta">—</div>
+      </div>
+
+      <!-- Captured image (top, fixed height) -->
+      <div id="review-img-wrap">
+        <img id="review-img" src="" alt="Captured photo" />
+        <div id="img-chips">
+          <div class="chip hi" id="chip-res">—</div>
+          <div class="chip" id="chip-size">—</div>
+          <div class="chip" id="chip-time">—</div>
+        </div>
+      </div>
+
+      <!-- Upload progress bar -->
+      <div id="upload-bar-wrap"><div id="upload-bar"></div></div>
+
+      <!-- Scrollable result area -->
+      <div id="result-panel">
+        <!-- Placeholder shown before sending -->
+        <div id="result-placeholder">
+          <div class="ph-icon">🌸</div>
+          <div>Analyse the photo to see<br />the flower fingerprint</div>
+        </div>
+
+        <!-- Fingerprint card (shown after successful response) -->
+        <div id="fingerprint-card">
+          <div class="fp-card-header">
+            <div class="fp-card-label">Flower Fingerprint</div>
+            <div class="fp-card-badge" id="fp-conf-badge">High Confidence</div>
+          </div>
+          <div class="fp-value-wrap">
+            <div class="fp-value" id="fp-value">—</div>
+            <div class="fp-sub" id="fp-sub">—</div>
+          </div>
+          <div class="petal-grid" id="petal-grid"></div>
+        </div>
+
+        <!-- Detection metadata (shown after successful response) -->
+        <div class="det-meta" id="det-meta" style="display: none"></div>
+
+        <!-- Stage05 circle debug image (shown when stage05_image_base64 is present) -->
+        <div id="stage05-card">
+          <div class="s05-header">
+            <div class="s05-label">Circle Detection · Stage 05</div>
+            <div class="s05-tag">PNG · Debug View</div>
+          </div>
+          <div id="stage05-img-wrap">
+            <div id="stage05-spinner"></div>
+            <img id="stage05-img" src="" alt="Circle detection debug image" />
+          </div>
+          <div class="s05-caption" id="stage05-caption">—</div>
+        </div>
+
+        <!-- Error card -->
+        <div id="error-card">
+          <div class="ec-title">Analysis Failed</div>
+          <div class="ec-msg" id="error-msg">—</div>
+        </div>
+      </div>
+      <!-- /result-panel -->
+
+      <!-- Action buttons -->
+      <div id="review-controls">
+        <button class="btn btn-outline" id="btn-retake">↩ Retake</button>
+        <button class="btn btn-primary" id="btn-send">Analyse ↑</button>
+      </div>
+    </div>
+    <!-- /review-screen -->
+
+    <!-- Toast -->
+    <div id="toast"></div>
+
+    <script>
+      /* ═══════════════════════════════════════════════════════════
+     CONFIG
+  ═══════════════════════════════════════════════════════════ */
+      const CONFIG = {
+        API_ENDPOINT:
+          "https://ripening-footman-strategic.ngrok-free.dev/predict", // ← update this
+        IMAGE_QUALITY: 0.96,
+        IMAGE_FORMAT: "image/jpeg",
+        BOOK_ID: null, // optional: set a static book_id or leave null
+      };
+
+      /* ── DOM refs ─────────────────────────────────────────────── */
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const overlay = document.getElementById("overlay");
+      const btnStart = document.getElementById("btn-start");
+      const btnCapture = document.getElementById("btn-capture");
+      const btnFlip = document.getElementById("btn-flip");
+      const resBadge = document.getElementById("res-badge");
+      const statusBar = document.getElementById("status-bar");
+      const statusText = document.getElementById("status-text");
+      const reviewScreen = document.getElementById("review-screen");
+      const reviewImg = document.getElementById("review-img");
+      const reviewMeta = document.getElementById("review-meta");
+      const btnRetake = document.getElementById("btn-retake");
+      const btnSend = document.getElementById("btn-send");
+      const uploadBarWrap = document.getElementById("upload-bar-wrap");
+      const uploadBar = document.getElementById("upload-bar");
+      const chipRes = document.getElementById("chip-res");
+      const chipSize = document.getElementById("chip-size");
+      const chipTime = document.getElementById("chip-time");
+      const flash = document.getElementById("flash");
+      const toast = document.getElementById("toast");
+      const resultPlaceholder = document.getElementById("result-placeholder");
+      const fingerprintCard = document.getElementById("fingerprint-card");
+      const fpValue = document.getElementById("fp-value");
+      const fpSub = document.getElementById("fp-sub");
+      const fpConfBadge = document.getElementById("fp-conf-badge");
+      const petalGrid = document.getElementById("petal-grid");
+      const detMeta = document.getElementById("det-meta");
+      const stage05Card = document.getElementById("stage05-card");
+      const stage05Img = document.getElementById("stage05-img");
+      const stage05Spinner = document.getElementById("stage05-spinner");
+      const stage05Caption = document.getElementById("stage05-caption");
+      const errorCard = document.getElementById("error-card");
+      const errorMsg = document.getElementById("error-msg");
+
+      /* ── State ────────────────────────────────────────────────── */
+      let stream = null;
+      let imageCapture = null;
+      let capturedBlob = null;
+      let capturedBase64 = null; // RAW base64 string — NO data: prefix (what backend expects)
+      let capturedDataURL = null; // full data URL for <img> preview
+      let facingMode = "environment";
+      let isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+      let streamWidth = 0;
+      let streamHeight = 0;
+
+      /* ─────────────────────────────────────────────────────────── 
+     HELPERS
+  ─────────────────────────────────────────────────────────── */
+      function setStatus(msg, type = "") {
+        statusText.textContent = msg;
+        statusBar.className = type;
+      }
+
+      let toastTimer;
+      function showToast(msg, type = "") {
+        clearTimeout(toastTimer);
+        toast.textContent = msg;
+        toast.className = "show " + type;
+        toastTimer = setTimeout(() => {
+          toast.className = "";
+        }, 3500);
+      }
+
+      /* ─────────────────────────────────────────────────────────── 
+     CAMERA — START STREAM AT MAX RESOLUTION
+  ─────────────────────────────────────────────────────────── */
+      async function startCamera(facing = "environment") {
+        stopStream();
+        setStatus("Requesting camera…");
+
+        const constraints = {
+          video: {
+            facingMode: { ideal: facing },
+            width: { ideal: 9999 },
+            height: { ideal: 9999 },
+            frameRate: { ideal: 30 },
+          },
+          audio: false,
+        };
+
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          video.srcObject = stream;
+          await video.play();
+
+          const track = stream.getVideoTracks()[0];
+          imageCapture =
+            typeof ImageCapture !== "undefined"
+              ? new ImageCapture(track)
+              : null;
+
+          const settings = track.getSettings();
+          streamWidth = settings.width || video.videoWidth;
+          streamHeight = settings.height || video.videoHeight;
+
+          video.addEventListener(
+            "loadedmetadata",
+            () => {
+              if (!streamWidth) streamWidth = video.videoWidth;
+              if (!streamHeight) streamHeight = video.videoHeight;
+              updateResDisplay();
+            },
+            { once: true },
+          );
+
+          updateResDisplay();
+          overlay.classList.add("hidden");
+          btnCapture.disabled = false;
+          btnFlip.disabled = false;
+          setStatus("Live · tap shutter to capture", "active");
+        } catch (err) {
+          console.error(err);
+
+          let msg = `${err.name}: ${err.message}`;
+
+          setStatus(msg, "error");
+
+          document.querySelector(".ov-title").textContent = "Camera Error";
+          document.querySelector(".ov-sub").textContent = msg;
+
+          overlay.classList.remove("hidden");
+
+          btnCapture.disabled = true;
+          btnFlip.disabled = true;
+
+          resBadge.textContent = "ERROR";
+          resBadge.classList.remove("live");
+        }
+      }
+
+      function updateResDisplay() {
+        const w = streamWidth || video.videoWidth;
+        const h = streamHeight || video.videoHeight;
+        if (w && h) {
+          resBadge.textContent = `${w}×${h} · ${((w * h) / 1e6).toFixed(1)}MP`;
+          resBadge.classList.add("live");
+        }
+      }
+
+      function stopStream() {
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+        }
+      }
+
+      /* ─────────────────────────────────────────────────────────── 
+     CAPTURE — ImageCapture API → canvas fallback
+  ─────────────────────────────────────────────────────────── */
+      async function capturePhoto() {
+        if (!stream) return;
+        btnCapture.disabled = true;
+        setStatus("Capturing…");
+
+        // Flash
+        flash.style.transition = "none";
+        flash.style.opacity = "0.85";
+        setTimeout(() => {
+          flash.style.transition = "opacity 0.4s ease";
+          flash.style.opacity = "0";
+        }, 80);
+
+        try {
+          let blob;
+          if (imageCapture) {
+            try {
+              blob = await imageCapture.takePhoto({
+                imageWidth: 9999,
+                imageHeight: 9999,
+              });
+            } catch {
+              blob = await canvasCapture();
+            }
+          } else {
+            blob = await canvasCapture();
+          }
+
+          capturedBlob = blob;
+          capturedDataURL = await blobToDataURL(blob);
+
+          // ── Extract raw base64 (strip "data:image/jpeg;base64," prefix)
+          // Backend PredictRequest.image expects plain base64, not a data URL
+          capturedBase64 = capturedDataURL.split(",")[1];
+
+          const dims = await getImageDimensions(capturedDataURL);
+          streamWidth = dims.w;
+          streamHeight = dims.h;
+
+          showReview(capturedDataURL, blob.size, dims);
+        } catch (err) {
+          console.error("Capture error:", err);
+          setStatus("Capture failed — try again", "error");
+          showToast("❌ Capture failed", "error");
+          btnCapture.disabled = false;
+        }
+      }
+
+      async function canvasCapture() {
+        const w = video.videoWidth,
+          h = video.videoHeight;
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        return new Promise((res, rej) => {
+          canvas.toBlob(
+            (b) => (b ? res(b) : rej(new Error("toBlob failed"))),
+            CONFIG.IMAGE_FORMAT,
+            CONFIG.IMAGE_QUALITY,
+          );
+        });
+      }
+
+      function blobToDataURL(blob) {
+        return new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = () => rej(r.error);
+          r.readAsDataURL(blob);
+        });
+      }
+
+      function getImageDimensions(dataURL) {
+        return new Promise((res) => {
+          const img = new Image();
+          img.onload = () => res({ w: img.naturalWidth, h: img.naturalHeight });
+          img.onerror = () => res({ w: streamWidth, h: streamHeight });
+          img.src = dataURL;
+        });
+      }
+
+      /* ─────────────────────────────────────────────────────────── 
+     REVIEW SCREEN — open
+  ─────────────────────────────────────────────────────────── */
+      function showReview(dataURL, byteSize, dims) {
+        reviewImg.src = dataURL;
+        const reviewImgWrap = document.getElementById("review-img-wrap");
+        if (reviewImgWrap) {
+          reviewImgWrap.style.display = "block";
+        }
+
+        const mp = ((dims.w * dims.h) / 1e6).toFixed(2);
+        const kb = (byteSize / 1024).toFixed(1);
+        const sizeStr = kb < 1000 ? `${kb} KB` : `${(kb / 1024).toFixed(2)} MB`;
+
+        chipRes.textContent = `${dims.w}×${dims.h} · ${mp}MP`;
+        chipSize.textContent = sizeStr;
+        chipTime.textContent = new Date().toLocaleTimeString();
+        reviewMeta.innerHTML = `${mp}MP &nbsp;·&nbsp; ${sizeStr}<br>${CONFIG.IMAGE_FORMAT.split("/")[1].toUpperCase()}`;
+
+        // Reset result area to placeholder
+        resetResultPanel();
+        setBtnState("idle");
+
+        reviewScreen.classList.add("open");
+        setStatus("Reviewing photo…");
+      }
+
+      function resetResultPanel() {
+        resultPlaceholder.style.display = "flex";
+        fingerprintCard.classList.remove("show");
+        stage05Card.classList.remove("show");
+        errorCard.classList.remove("show");
+        detMeta.style.display = "none";
+        petalGrid.innerHTML = "";
+        fpValue.textContent = "—";
+        // Reset stage05 image so old image doesn't flash on next open
+        stage05Img.src = "";
+        stage05Img.classList.remove("loaded");
+        stage05Spinner.classList.remove("hidden");
+      }
+
+      /* ─────────────────────────────────────────────────────────── 
+     SEND TO BOOKPRINT API — /predict
+     
+     PredictRequest schema (from schemas.py):
+       { "image": "<raw_base64_string>", "book_id": "<optional>" }
+     
+     The backend's ingest_image() decodes the raw base64 directly.
+     We must NOT send the "data:image/jpeg;base64," prefix.
+  ─────────────────────────────────────────────────────────── */
+
+      /** Generate a short, unique book_id like "BP-1A2B3C4D" */
+      function generateBookId() {
+        const hex = Array.from(crypto.getRandomValues(new Uint8Array(4)))
+          .map((b) => b.toString(16).toUpperCase().padStart(2, "0"))
+          .join("");
+        return `BP-${hex}`;
+      }
+
+      async function sendImage() {
+        if (!capturedBase64) return;
+        setBtnState("loading");
+        setStatus("Analysing…");
+        simulateProgress();
+
+        // Reset previous results
+        fingerprintCard.classList.remove("show");
+        errorCard.classList.remove("show");
+        detMeta.style.display = "none";
+        resultPlaceholder.style.display = "none";
+
+        /* ── Build payload matching PredictRequest schema ─────────── */
+        const payload = {
+          image: capturedBase64, // raw base64, no data: prefix
+          book_id: CONFIG.BOOK_ID || generateBookId(), // optional
+        };
+
+        try {
+          const response = await fetch(CONFIG.API_ENDPOINT, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          finishProgress();
+
+          if (!response.ok) {
+            let detail = `HTTP ${response.status}`;
+            try {
+              const e = await response.json();
+              detail = e.detail || detail;
+            } catch {}
+            throw new Error(detail);
+          }
+
+          const data = await response.json();
+          const reviewImgWrap = document.getElementById("review-img-wrap");
+          if (reviewImgWrap) {
+            reviewImgWrap.style.display = "none";
+          }
+          handleSuccess(data);
+        } catch (err) {
+          console.error("API error:", err);
+          finishProgress();
+          setBtnState("fail");
+          setStatus("Analysis failed", "error");
+          showToast(`❌ ${err.message}`, "error");
+          showErrorCard(err.message);
+        }
+      }
+
+      /* ─────────────────────────────────────────────────────────── 
+     HANDLE SUCCESS RESPONSE — PredictResponse
+     Extract: detections[0].classification.fingerprint
+              detections[0].classification.petal_classifications
+  ─────────────────────────────────────────────────────────── */
+      function handleSuccess(data) {
+        setBtnState("success");
+        setStatus(
+          `Analysis complete · ${data.detection_count} detection(s)`,
+          "ok",
+        );
+        showToast("✓ Analysis complete", "success");
+
+        const det = data.detections && data.detections[0];
+        if (!det || !det.classification) {
+          showErrorCard(
+            "No flower detected in the image. Please try again with a clearer photo.",
+          );
+          return;
+        }
+
+        const cls = det.classification;
+        const fingerprint = cls.fingerprint;
+        const petals = cls.petal_classifications || [];
+        const anyLow = cls.any_low_confidence;
+
+        /* ── Fingerprint card ──────────────────────────────────── */
+        fpValue.textContent = fingerprint;
+        fpSub.textContent = `${petals.length} petal sector${petals.length !== 1 ? "s" : ""} · Book ID: ${data.book_id || "N/A"}`;
+
+        fpConfBadge.textContent = anyLow
+          ? "⚠ Low Confidence"
+          : "✓ High Confidence";
+        fpConfBadge.className = "fp-card-badge" + (anyLow ? " warn" : "");
+
+        /* ── Petal grid ────────────────────────────────────────── */
+        petalGrid.innerHTML = "";
+        petals.forEach((p) => {
+          const cell = document.createElement("div");
+          cell.className = "petal-cell" + (p.low_confidence ? " low-conf" : "");
+          cell.innerHTML = `
+        <div class="pc-idx">S${p.sector_index}</div>
+        <div class="pc-digit">${p.digit}</div>
+        <div class="pc-color">${p.color}</div>
+        <div class="pc-conf">${(p.confidence * 100).toFixed(0)}%</div>
+      `;
+          petalGrid.appendChild(cell);
+        });
+
+        fingerprintCard.classList.add("show");
+
+        /* ── Detection meta grid ───────────────────────────────── */
+        const confPct = (det.confidence * 100).toFixed(1);
+        detMeta.innerHTML = `
+      <div class="det-meta-item">
+        <div class="dmi-label">Detection</div>
+        <div class="dmi-value accent">${confPct}% confidence</div>
+      </div>
+      <div class="det-meta-item">
+        <div class="dmi-label">Class</div>
+        <div class="dmi-value">${det.class_name}</div>
+      </div>
+      <div class="det-meta-item">
+        <div class="dmi-label">Image Size</div>
+        <div class="dmi-value">${data.image_width}×${data.image_height}</div>
+      </div>
+      <div class="det-meta-item">
+        <div class="dmi-label">Circle</div>
+        <div class="dmi-value">${det.circle_found ? det.circle_method || "found" : "not found"}</div>
+      </div>
+    `;
+        detMeta.style.display = "grid";
+
+        /* ── Stage05 circle debug image ────────────────────────────
+       det.stage05_image_base64 is a raw base64 PNG string from
+       the backend (encode_file_to_base64 returns no data: prefix).
+       det.stage05_image_mime_type is "image/png".
+       We reconstruct the full data URL to set as <img> src.
+    ─────────────────────────────────────────────────────────── */
+        if (det.stage05_image_base64) {
+          const mime = det.stage05_image_mime_type || "image/png";
+          const dataURL = `data:${mime};base64,${det.stage05_image_base64}`;
+
+          // Show card immediately with spinner, then fade image in once decoded
+          stage05Card.classList.add("show");
+          stage05Spinner.classList.remove("hidden");
+          stage05Img.classList.remove("loaded");
+
+          stage05Img.onload = () => {
+            stage05Spinner.classList.add("hidden");
+            stage05Img.classList.add("loaded");
+          };
+          stage05Img.onerror = () => {
+            stage05Spinner.classList.add("hidden");
+            stage05Caption.textContent = "Image could not be decoded.";
+          };
+
+          // Build a human-readable caption from circle metadata
+          const cx = det.circle_center_x !== null ? det.circle_center_x : "—";
+          const cy = det.circle_center_y !== null ? det.circle_center_y : "—";
+          const cr = det.circle_radius !== null ? det.circle_radius : "—";
+          const cm = det.circle_method || "unknown";
+          stage05Caption.textContent = `Center (${cx}, ${cy}) · Radius ${cr}px · Method: ${cm}`;
+
+          // Set src last — triggers onload / onerror
+          stage05Img.src = dataURL;
+        } else {
+          // No stage05 image in response — keep card hidden
+          stage05Card.classList.remove("show");
+        }
+
+        // Scroll result panel to top so fingerprint is visible first
+        document.getElementById("result-panel").scrollTop = 0;
+      }
+
+      function showErrorCard(msg) {
+        errorMsg.textContent = msg;
+        errorCard.classList.add("show");
+        resultPlaceholder.style.display = "none";
+      }
+
+      /* ── Progress bar ─────────────────────────────────────────── */
+      function simulateProgress() {
+        uploadBarWrap.classList.add("show");
+        uploadBar.style.width = "0%";
+        setTimeout(() => (uploadBar.style.width = "30%"), 50);
+        setTimeout(() => (uploadBar.style.width = "65%"), 800);
+        setTimeout(() => (uploadBar.style.width = "85%"), 2000);
+      }
+      function finishProgress() {
+        uploadBar.style.width = "100%";
+        setTimeout(() => {
+          uploadBarWrap.classList.remove("show");
+          uploadBar.style.width = "0%";
+        }, 500);
+      }
+
+      /* ── Button states ────────────────────────────────────────── */
+      function setBtnState(state) {
+        btnSend.disabled = false;
+        btnRetake.disabled = false;
+        btnSend.className = "btn btn-primary";
+        if (state === "loading") {
+          btnSend.disabled = true;
+          btnRetake.disabled = true;
+          btnSend.classList.add("loading");
+          btnSend.textContent = "Analysing…";
+        } else if (state === "success") {
+          btnSend.classList.add("success");
+          btnSend.textContent = "✓ Done";
+        } else if (state === "fail") {
+          btnSend.classList.add("fail");
+          btnSend.textContent = "Retry ↑";
+        } else {
+          btnSend.textContent = "Analyse ↑";
+        }
+      }
+
+      /* ── Close review ─────────────────────────────────────────── */
+      function closeReview() {
+        reviewScreen.classList.remove("open");
+        capturedBlob = null;
+        capturedBase64 = null;
+        capturedDataURL = null;
+        reviewImg.src = "";
+        btnCapture.disabled = false;
+        setStatus("Live · tap shutter to capture", "active");
+      }
+
+      /* ── Flip camera ──────────────────────────────────────────── */
+      async function flipCamera() {
+        facingMode = facingMode === "environment" ? "user" : "environment";
+        btnFlip.disabled = true;
+        setStatus("Switching camera…");
+        await startCamera(facingMode);
+      }
+
+      /* ── Keyboard shortcuts ───────────────────────────────────── */
+      document.addEventListener("keydown", (e) => {
+        if (e.code === "Space" && !reviewScreen.classList.contains("open")) {
+          e.preventDefault();
+          if (!btnCapture.disabled) capturePhoto();
+        }
+        if (e.code === "Enter" && reviewScreen.classList.contains("open")) {
+          if (!btnSend.disabled) sendImage();
+        }
+        if (e.code === "Escape" && reviewScreen.classList.contains("open")) {
+          closeReview();
+        }
+      });
+
+      window.addEventListener("orientationchange", () =>
+        setTimeout(updateResDisplay, 500),
+      );
+
+      /* ── Event bindings ───────────────────────────────────────── */
+      btnStart.addEventListener("click", () =>
+        startCamera(isMobile ? "environment" : "user"),
+      );
+      btnCapture.addEventListener("click", capturePhoto);
+      btnFlip.addEventListener("click", flipCamera);
+      btnRetake.addEventListener("click", closeReview);
+      btnSend.addEventListener("click", sendImage);
+
+      /* ── Auto-start if permission already granted ─────────────── */
+      (async () => {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          if (devices.some((d) => d.kind === "videoinput" && d.label)) {
+            await startCamera(isMobile ? "environment" : "user");
+          }
+        } catch (_) {}
+      })();
+    </script>
+  </body>
+</html>
